@@ -31,4 +31,5 @@ jobs:
         with:
           asdf-system: coalton
           run-tests:
+            #+sbcl (sb-ext:restrict-compiler-policy cl:safety 3)
             (asdf:test-system :coalton)
