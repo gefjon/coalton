@@ -32,7 +32,10 @@
     (typed-node-literal
      (:include typed-node)
      (:constructor typed-node-literal (type unparsed value)))
-  (value (required 'value) :type literal-value :read-only t))
+  (value (required 'value)
+   ;; looser type requirement than `node-literal', because `node-quote' is also transformed into a
+   ;; `typed-node-literal', and `node-quote' can hold any lisp object, not just an atom.
+   :type t :read-only t))
 
 #+(and sbcl coalton-release)
 (declaim (sb-ext:freeze-type typed-node-literal))
@@ -287,71 +290,72 @@
    (typed-node-unparsed node)
    (apply-substitution subs (typed-node-seq-subnodes node))))
 
-(defgeneric replace-node-type (node new-type)
-  (:method ((node typed-node-literal) new-type)
-    (typed-node-literal
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-literal-value node)))
+(defgeneric replace-node-type (node new-type))
 
-  (:method ((node typed-node-variable) new-type)
-    (typed-node-variable
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-variable-name node)))
+(defmethod replace-node-type ((node typed-node-literal) new-type)
+  (typed-node-literal
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-literal-value node)))
 
-  (:method ((node typed-node-abstraction) new-type)
-    (typed-node-abstraction
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-abstraction-vars node)
-     (typed-node-abstraction-subexpr node)
-     (typed-node-abstraction-name-map node)))
+(defmethod replace-node-type ((node typed-node-variable) new-type)
+  (typed-node-variable
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-variable-name node)))
 
-  (:method ((node typed-node-lisp) new-type)
-    (typed-node-lisp
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-lisp-variables node)
-     (typed-node-lisp-form node)))
+(defmethod replace-node-type ((node typed-node-abstraction) new-type)
+  (typed-node-abstraction
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-abstraction-vars node)
+   (typed-node-abstraction-subexpr node)
+   (typed-node-abstraction-name-map node)))
 
-  (:method ((node typed-node-application) new-type)
-    (typed-node-application
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-application-rator node)
-     (typed-node-application-rands node)))
+(defmethod replace-node-type ((node typed-node-lisp) new-type)
+  (typed-node-lisp
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-lisp-variables node)
+   (typed-node-lisp-form node)))
 
-  (:method ((node typed-node-direct-application) new-type)
-    (typed-node-direct-application
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-direct-application-rator-type node)
-     (typed-node-direct-application-rator node)
-     (typed-node-direct-application-rands node)))
+(defmethod replace-node-type ((node typed-node-application) new-type)
+  (typed-node-application
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-application-rator node)
+   (typed-node-application-rands node)))
 
-  (:method ((node typed-node-let) new-type)
-    (typed-node-let
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-let-bindings node)
-     (typed-node-let-subexpr node)
-     (typed-node-let-sorted-bindings node)
-     (typed-node-let-dynamic-extent-bindings node)
-     (typed-node-let-name-map node)))
+(defmethod replace-node-type ((node typed-node-direct-application) new-type)
+  (typed-node-direct-application
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-direct-application-rator-type node)
+   (typed-node-direct-application-rator node)
+   (typed-node-direct-application-rands node)))
 
-  (:method ((node typed-node-match) new-type)
-    (typed-node-match
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-match-expr node)
-     (typed-node-match-branches node)))
+(defmethod replace-node-type ((node typed-node-let) new-type)
+  (typed-node-let
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-let-bindings node)
+   (typed-node-let-subexpr node)
+   (typed-node-let-sorted-bindings node)
+   (typed-node-let-dynamic-extent-bindings node)
+   (typed-node-let-name-map node)))
 
-  (:method ((node typed-node-seq) new-type)
-    (typed-node-seq
-     new-type
-     (typed-node-unparsed node)
-     (typed-node-seq-subnodes node))))
+(defmethod replace-node-type ((node typed-node-match) new-type)
+  (typed-node-match
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-match-expr node)
+   (typed-node-match-branches node)))
+
+(defmethod replace-node-type ((node typed-node-seq) new-type)
+  (typed-node-seq
+   new-type
+   (typed-node-unparsed node)
+   (typed-node-seq-subnodes node)))
 
 (defgeneric collect-type-predicates (node)
   (:method ((type qualified-ty))

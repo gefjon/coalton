@@ -10,7 +10,7 @@ variable is free in the expression."
   (let ((fv nil))
     (labels ((analyze (expr)
                (etypecase expr
-                 (node-literal
+                 ((or node-literal node-quote)
                   nil)
 
                  (node-variable
@@ -46,7 +46,9 @@ variable is free in the expression."
                     (analyze subnode)))
 
                  (node-the
-                  (analyze (node-the-subnode expr))))))
+                  (analyze (node-the-subnode expr)))
+
+                 )))
 
       (analyze value)
       fv)))

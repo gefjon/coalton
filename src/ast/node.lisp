@@ -144,5 +144,14 @@
 #+(and sbcl coalton-release)
 (declaim (sb-ext:freeze-type node-the))
 
+(defstruct
+    (node-quote
+     (:include node)
+     (:constructor node-quote (unparsed literal)))
+  (literal (required 'literal) :type t :read-only t))
+
+#+(and sbcl coalton-release)
+(declaim (sb-ext:freeze-type node-quote))
+
 #+(and sbcl coalton-release)
 (declaim (sb-ext:freeze-type node))

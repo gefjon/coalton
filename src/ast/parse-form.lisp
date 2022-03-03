@@ -56,6 +56,10 @@ This does not attempt to do any sort of analysis whatsoever. It is suitable for 
           (error-parsing expr "Invalid type assertion."))
         (parse-the expr (first args) (second args) m package))
 
+       ;; Quote
+       (((coalton:quote cl:quote) literal)
+        (node-quote expr literal))
+
        ;; Application
        ((t &rest rands)
         (cond

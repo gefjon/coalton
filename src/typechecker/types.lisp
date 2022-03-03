@@ -165,6 +165,27 @@
 ;;; Early types
 ;;;
 
+(declaim (type ty
+               *boolean-type*
+               *char-type*
+               *u8-type*
+               *u16-type*
+               *u32-type*
+               *u64-type*
+               *i8-type*
+               *i16-type*
+               *i32-type*
+               *i64-type*
+               *integer-type*
+               *ifix-type*
+               *ufix-type*
+               *single-float-type*
+               *double-float-type*
+               *string-type*
+               *lisp-object-type*
+               *arrow-type*
+               *list-type*))
+
 (defvar *boolean-type* (%make-tcon (%make-tycon :name 'coalton:Boolean     :kind kstar)))
 (defvar *char-type*    (%make-tcon (%make-tycon :name 'coalton:Char        :kind kstar)))
 (defvar *u8-type*      (%make-tcon (%make-tycon :name 'coalton:U8          :kind kstar)))
@@ -189,6 +210,26 @@
 (defvar *arrow-type* (%make-tcon (%make-tycon :name 'coalton:-> :kind (kfun kstar (kfun kstar kstar)))))
 
 (defvar *list-type* (%make-tcon (%make-tycon :name 'coalton:List :kind (kfun kstar kstar))))
+
+#+sbcl (declaim (sb-ext:always-bound *boolean-type*
+                                     *char-type*
+                                     *u8-type*
+                                     *u16-type*
+                                     *u32-type*
+                                     *u64-type*
+                                     *i8-type*
+                                     *i16-type*
+                                     *i32-type*
+                                     *i64-type*
+                                     *integer-type*
+                                     *ifix-type*
+                                     *ufix-type*
+                                     *single-float-type*
+                                     *double-float-type*
+                                     *string-type*
+                                     *lisp-object-type*
+                                     *arrow-type*
+                                     *list-type*))
 
 
 (defun apply-type-argument (tcon arg)

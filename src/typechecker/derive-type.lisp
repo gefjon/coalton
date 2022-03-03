@@ -16,258 +16,277 @@
 (defgeneric derive-expression-type (value env substs)
   (:documentation "Derive the TYPE and generate a TYPED-NODE for expression VALUE
 
-Returns (VALUES type predicate-list typed-node subs)")
-  (:method ((value node-literal) env substs)
-    (declare (type substitution-list substs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
-    (let ((literal-value (node-literal-value value)))
-      (multiple-value-bind (type preds)
-          (derive-literal-type literal-value)
-        (values
-         type
-         preds
-         (typed-node-literal
-          (to-scheme (qualify nil type))
-          (node-unparsed value)
-          literal-value)
-         substs))))
+Returns (VALUES type predicate-list typed-node subs)"))
 
-  (:method ((value node-lisp) env substs)
-    (declare (type environment env)
-             (type substitution-list substs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
-    (let* ((scheme (parse-and-resolve-type env (node-lisp-type value)))
-           (qual-type (fresh-inst scheme))
-           (type (qualified-ty-type qual-type))
-           (preds (qualified-ty-predicates qual-type)))
-      (values type
-              preds
-              (typed-node-lisp
-               (to-scheme qual-type)
-               (node-unparsed value)
-               (node-lisp-variables value)
-               (node-lisp-form value))
-              substs)))
+(defmethod derive-expression-type ((value node-literal) env substs)
+  (declare (type substitution-list substs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (let ((literal-value (node-literal-value value)))
+    (multiple-value-bind (type preds)
+        (derive-literal-type literal-value)
+      (values
+       type
+       preds
+       (typed-node-literal
+        (to-scheme (qualify nil type))
+        (node-unparsed value)
+        literal-value)
+       substs))))
 
-  (:method ((value node-variable) env substs)
-    (declare (type substitution-list substs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
-    (let* ((scheme (lookup-value-type env (node-variable-name value)))
-           (qual-type (fresh-inst scheme))
-           (type (qualified-ty-type qual-type))
-           (preds (qualified-ty-predicates qual-type)))
-      (values type
-              preds
-              (typed-node-variable
-               (to-scheme qual-type)
-               (node-unparsed value)
-               (node-variable-name value))
-              substs)))
+(defmethod derive-expression-type ((value node-lisp) env substs)
+  (declare (type environment env)
+           (type substitution-list substs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (let* ((scheme (parse-and-resolve-type env (node-lisp-type value)))
+         (qual-type (fresh-inst scheme))
+         (type (qualified-ty-type qual-type))
+         (preds (qualified-ty-predicates qual-type)))
+    (values type
+            preds
+            (typed-node-lisp
+             (to-scheme qual-type)
+             (node-unparsed value)
+             (node-lisp-variables value)
+             (node-lisp-form value))
+            substs)))
 
-  (:method ((value node-application) env substs)
-    (declare (type environment env)
-             (type substitution-list substs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
+(defmethod derive-expression-type ((value node-variable) env substs)
+  (declare (type substitution-list substs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (let* ((scheme (lookup-value-type env (node-variable-name value)))
+         (qual-type (fresh-inst scheme))
+         (type (qualified-ty-type qual-type))
+         (preds (qualified-ty-predicates qual-type)))
+    (values type
+            preds
+            (typed-node-variable
+             (to-scheme qual-type)
+             (node-unparsed value)
+             (node-variable-name value))
+            substs)))
 
-    (let* ((rator (node-application-rator value))
-           (rands (node-application-rands value))
-           (ret-ty (make-variable))
-           (typed-rands nil))
+(defmethod derive-expression-type ((value node-application) env substs)
+  (declare (type environment env)
+           (type substitution-list substs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
 
-      (when (null rands)
-        (coalton-impl::coalton-bug "Invalid application with 0 arguments ~A." rator))
+  (let* ((rator (node-application-rator value))
+         (rands (node-application-rands value))
+         (ret-ty (make-variable))
+         (typed-rands nil))
 
-      (multiple-value-bind (fun-ty fun-preds typed-rator substs)
-          (derive-expression-type rator env substs)
-        (unless (or (tvar-p fun-ty)
-                    (function-type-p fun-ty))
-          (error 'invalid-operator-type-error :type fun-ty))
-        (let ((arg-preds nil))
-          (labels ((build-function (args)
-                     (if (null args)
-                         ret-ty
-                         (multiple-value-bind (arg-ty arg-pred typed-rand new-substs-arg)
-                             (derive-expression-type (car args) env substs)
-                           (push typed-rand typed-rands)
-                           (setf arg-preds (append arg-pred arg-preds))
-                           (setf substs new-substs-arg)
-                           (make-function-type arg-ty (build-function (cdr args)))))))
-            (let* ((ftype (build-function rands))
-                   (preds (append fun-preds arg-preds))
-                   (substs (unify substs ftype fun-ty)))
-              (values ret-ty
-                      preds
-                      (typed-node-application
-                       (to-scheme (qualify nil ret-ty))
-                       (node-unparsed value)
-                       typed-rator
-                       (reverse typed-rands))
-                      substs)))))))
+    (when (null rands)
+      (coalton-impl::coalton-bug "Invalid application with 0 arguments ~A." rator))
 
-  (:method ((value node-abstraction) env substs)
-    (declare (type environment env)
-             (type substitution-list substs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
-    (let* ((subexpr (node-abstraction-subexpr value))
-           (vars (node-abstraction-vars value))
-           (new-env (push-value-environment
-                     env
-                     (mapcar (lambda (var) (cons var (to-scheme (qualify nil (make-variable)))))
-                             vars))))
-      (multiple-value-bind (ret-ty ret-preds typed-subexpr new-substs)
-          (derive-expression-type subexpr new-env substs)
+    (multiple-value-bind (fun-ty fun-preds typed-rator substs)
+        (derive-expression-type rator env substs)
+      (unless (or (tvar-p fun-ty)
+                  (function-type-p fun-ty))
+        (error 'invalid-operator-type-error :type fun-ty))
+      (let ((arg-preds nil))
         (labels ((build-function (args)
                    (if (null args)
                        ret-ty
-                       (make-function-type (qualified-ty-type (fresh-inst (lookup-value-type new-env (car args))))
-                                           (build-function (cdr args))))))
-          (let ((ret-ty (build-function vars))
-                (ret-preds (reduce-context env ret-preds new-substs)))
+                       (multiple-value-bind (arg-ty arg-pred typed-rand new-substs-arg)
+                           (derive-expression-type (car args) env substs)
+                         (push typed-rand typed-rands)
+                         (setf arg-preds (append arg-pred arg-preds))
+                         (setf substs new-substs-arg)
+                         (make-function-type arg-ty (build-function (cdr args)))))))
+          (let* ((ftype (build-function rands))
+                 (preds (append fun-preds arg-preds))
+                 (substs (unify substs ftype fun-ty)))
             (values ret-ty
-                    ret-preds
-                    (typed-node-abstraction
-                     (to-scheme (qualified-ty ret-preds ret-ty))
-                     (node-unparsed value)
-                     (mapcar (lambda (var)
-                               (cons var (lookup-value-type new-env var)))
-                             vars)
-                     typed-subexpr
-                     (node-abstraction-name-map value))
-                    new-substs))))))
-
-  (:method ((value node-let) env subs)
-    (declare (type environment env)
-             (type substitution-list subs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
-    (let ((bindings (node-let-bindings value))
-          (declared-types
-            (mapcar (lambda (form)
-                      (cons (car form)
-                            (parse-and-resolve-type env (cdr form))))
-                    (node-let-declared-types value)))
-          (expl-bindings nil)
-          (impl-bindings nil))
-      ;; Split out explicit and implicit bindings
-      (loop :for binding :in bindings
-            :if (assoc (car binding) declared-types) :do
-              (push binding expl-bindings)
-            :else :do
-              (push binding impl-bindings))
-
-      (multiple-value-bind (typed-bindings bindings-preds env subs sccs)
-          ;; NOTE: If we wanted explicit types in let bindings this
-          ;;       would be the place to do it.
-          (derive-bindings-type
-           impl-bindings
-           expl-bindings
-           (alexandria:alist-hash-table declared-types)
-           env
-           subs
-           (node-let-name-map value))
-        (multiple-value-bind (type ret-preds typed-subexpr new-subs)
-            (derive-expression-type (node-let-subexpr value) env subs)
-          (let ((preds (append ret-preds bindings-preds)))
-            (values type
                     preds
-                    (typed-node-let
-                     (to-scheme (qualify nil type))
+                    (typed-node-application
+                     (to-scheme (qualify nil ret-ty))
                      (node-unparsed value)
-                     typed-bindings
-                     typed-subexpr sccs
-                     nil
-                     (node-let-name-map value))
-                    new-subs))))))
+                     typed-rator
+                     (reverse typed-rands))
+                    substs)))))))
 
-  (:method ((value node-match) env subs)
-    (declare (type environment env)
-             (type substitution-list subs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
-    (let ((tvar (make-variable)))
-      (multiple-value-bind (ty preds typed-expr new-subs)
-          (derive-expression-type (node-match-expr value) env subs)
-        (with-type-context ("match on ~A" (node-unparsed (node-match-expr value)))
-          (multiple-value-bind (typed-branches match-preds new-subs)
-              (derive-match-branches-type
-               (make-function-type ty tvar)
-               (node-match-branches value)
-               env
-               new-subs)
-            (let ((preds (append preds match-preds)))
-              (values
-               tvar
-               preds
-               (typed-node-match
-                (to-scheme (qualify nil tvar))
-                (node-unparsed value)
-                typed-expr
-                typed-branches)
-               new-subs)))))))
+(defmethod derive-expression-type ((value node-abstraction) env substs)
+  (declare (type environment env)
+           (type substitution-list substs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (let* ((subexpr (node-abstraction-subexpr value))
+         (vars (node-abstraction-vars value))
+         (new-env (push-value-environment
+                   env
+                   (mapcar (lambda (var) (cons var (to-scheme (qualify nil (make-variable)))))
+                           vars))))
+    (multiple-value-bind (ret-ty ret-preds typed-subexpr new-substs)
+        (derive-expression-type subexpr new-env substs)
+      (labels ((build-function (args)
+                 (if (null args)
+                     ret-ty
+                     (make-function-type (qualified-ty-type (fresh-inst (lookup-value-type new-env (car args))))
+                                         (build-function (cdr args))))))
+        (let ((ret-ty (build-function vars))
+              (ret-preds (reduce-context env ret-preds new-substs)))
+          (values ret-ty
+                  ret-preds
+                  (typed-node-abstraction
+                   (to-scheme (qualified-ty ret-preds ret-ty))
+                   (node-unparsed value)
+                   (mapcar (lambda (var)
+                             (cons var (lookup-value-type new-env var)))
+                           vars)
+                   typed-subexpr
+                   (node-abstraction-name-map value))
+                  new-substs))))))
 
-  (:method ((value node-seq) env subs)
-    (declare (type environment env)
-             (type substitution-list subs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
-    (let* ((initial-elements (butlast (node-seq-subnodes value)))
-           (last-element (car (last (node-seq-subnodes value))))
-           (preds nil)
-           (nodes nil))
+(defmethod derive-expression-type ((value node-let) env subs)
+  (declare (type environment env)
+           (type substitution-list subs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (let ((bindings (node-let-bindings value))
+        (declared-types
+          (mapcar (lambda (form)
+                    (cons (car form)
+                          (parse-and-resolve-type env (cdr form))))
+                  (node-let-declared-types value)))
+        (expl-bindings nil)
+        (impl-bindings nil))
+    ;; Split out explicit and implicit bindings
+    (loop :for binding :in bindings
+          :if (assoc (car binding) declared-types) :do
+            (push binding expl-bindings)
+          :else :do
+            (push binding impl-bindings))
+
+    (multiple-value-bind (typed-bindings bindings-preds env subs sccs)
+        ;; NOTE: If we wanted explicit types in let bindings this
+        ;;       would be the place to do it.
+        (derive-bindings-type
+         impl-bindings
+         expl-bindings
+         (alexandria:alist-hash-table declared-types)
+         env
+         subs
+         (node-let-name-map value))
+      (multiple-value-bind (type ret-preds typed-subexpr new-subs)
+          (derive-expression-type (node-let-subexpr value) env subs)
+        (let ((preds (append ret-preds bindings-preds)))
+          (values type
+                  preds
+                  (typed-node-let
+                   (to-scheme (qualify nil type))
+                   (node-unparsed value)
+                   typed-bindings
+                   typed-subexpr sccs
+                   nil
+                   (node-let-name-map value))
+                  new-subs))))))
+
+(defmethod derive-expression-type ((value node-match) env subs)
+  (declare (type environment env)
+           (type substitution-list subs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (let ((tvar (make-variable)))
+    (multiple-value-bind (ty preds typed-expr new-subs)
+        (derive-expression-type (node-match-expr value) env subs)
+      (with-type-context ("match on ~A" (node-unparsed (node-match-expr value)))
+        (multiple-value-bind (typed-branches match-preds new-subs)
+            (derive-match-branches-type
+             (make-function-type ty tvar)
+             (node-match-branches value)
+             env
+             new-subs)
+          (let ((preds (append preds match-preds)))
+            (values
+             tvar
+             preds
+             (typed-node-match
+              (to-scheme (qualify nil tvar))
+              (node-unparsed value)
+              typed-expr
+              typed-branches)
+             new-subs)))))))
+
+(defmethod derive-expression-type ((value node-seq) env subs)
+  (declare (type environment env)
+           (type substitution-list subs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (let* ((initial-elements (butlast (node-seq-subnodes value)))
+         (last-element (car (last (node-seq-subnodes value))))
+         (preds nil)
+         (nodes nil))
 
 
-      (loop :for elem :in initial-elements :do
-        (multiple-value-bind (tyvar preds_ node subs_)
-            (derive-expression-type elem env subs)
+    (loop :for elem :in initial-elements :do
+      (multiple-value-bind (tyvar preds_ node subs_)
+          (derive-expression-type elem env subs)
 
-          (setf subs subs_)
-          (setf preds (append preds preds_))
-          (push node nodes)
-
-          (when (function-type-p (apply-substitution subs tyvar))
-            (alexandria:simple-style-warning "Expression ~A in progn evaluates to a function. This may be intentional, but is also a common mistake in the event a function is accidentally curried."
-                                             (node-unparsed elem)))))
-
-      (multiple-value-bind (tyvar preds_ node subs)
-          (derive-expression-type last-element env subs)
+        (setf subs subs_)
         (setf preds (append preds preds_))
         (push node nodes)
+
+        (when (function-type-p (apply-substitution subs tyvar))
+          (alexandria:simple-style-warning "Expression ~A in progn evaluates to a function. This may be intentional, but is also a common mistake in the event a function is accidentally curried."
+                                           (node-unparsed elem)))))
+
+    (multiple-value-bind (tyvar preds_ node subs)
+        (derive-expression-type last-element env subs)
+      (setf preds (append preds preds_))
+      (push node nodes)
+      (values
+       tyvar
+       preds
+       (typed-node-seq
+        (to-scheme (qualify nil tyvar))
+        (node-unparsed value)
+        (reverse nodes))
+       subs))))
+
+(defmethod derive-expression-type ((value node-the) env subs)
+  (declare (type environment env)
+           (type substitution-list subs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+
+  (let* ((declared-scheme (parse-and-resolve-type env (node-the-type value)))
+         (declared-qualified (fresh-inst declared-scheme))
+         (declared-type (qualified-ty-type declared-qualified))
+         (declared-preds (qualified-ty-predicates declared-qualified)))
+
+    (multiple-value-bind (type preds node subs)
+        (derive-expression-type (node-the-subnode value) env subs)
+
+      (let* ((subs_ (match (apply-substitution subs type) declared-type))
+             (subs (compose-substitution-lists subs_ subs))
+             (preds_ (reduce-context env preds subs)))
+
+        (unless (subsetp declared-preds preds_ :test #'equalp)
+          (error 'declared-type-additional-predicates
+                 :preds (set-difference declared-preds preds_ :test #'equalp)
+                 :type declared-scheme))
+
         (values
-         tyvar
+         type
          preds
-         (typed-node-seq
-          (to-scheme (qualify nil tyvar))
-          (node-unparsed value)
-          (reverse nodes))
-         subs))))
+         node
+         subs)))))
 
-  (:method ((value node-the) env subs)
-    (declare (type environment env)
-             (type substitution-list subs)
-             (values ty ty-predicate-list typed-node substitution-list &optional))
+(declaim (type ty-scheme *lisp-object-scheme*))
+(defvar *lisp-object-scheme* (to-scheme (qualify nil *lisp-object-type*)))
+#+sbcl (declaim (sb-ext:always-bound *lisp-object-scheme*))
 
-    (let* ((declared-scheme (parse-and-resolve-type env (node-the-type value)))
-           (declared-qualified (fresh-inst declared-scheme))
-           (declared-type (qualified-ty-type declared-qualified))
-           (declared-preds (qualified-ty-predicates declared-qualified)))
+(defmethod derive-expression-type ((value node-quote) env subs)
+  "Convert `node-quote' nodes into `typed-node-literal' nodes; there's no need for a `typed-node-quote'"
+  (declare (type environment env)
+           (ignorable env)
+           (type substitution-list subs)
+           (values ty ty-predicate-list typed-node substitution-list &optional))
+  (values
+   *lisp-object-type*
+   nil
+   (typed-node-literal *lisp-object-scheme*
+                       (node-unparsed value)
+                       (node-quote-literal value))
+   subs))
 
-      (multiple-value-bind (type preds node subs)
-          (derive-expression-type (node-the-subnode value) env subs)
-
-        (let* ((subs_ (match (apply-substitution subs type) declared-type))
-               (subs (compose-substitution-lists subs_ subs))
-               (preds_ (reduce-context env preds subs)))
-
-          (unless (subsetp declared-preds preds_ :test #'equalp)
-            (error 'declared-type-additional-predicates
-                   :preds (set-difference declared-preds preds_ :test #'equalp)
-                   :type declared-scheme))
-
-          (values
-           type
-           preds
-           node
-           subs)))))
-
-  (:method (value env subs)
-    (error "Unable to derive type of expression ~A" value)))
+(defmethod derive-expression-type (value env subs)
+  (error "Unable to derive type of expression ~A" value))
 
 ;;;
 ;;; Let Bindings

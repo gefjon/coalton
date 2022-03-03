@@ -3,107 +3,107 @@
 (defvar *emit-type-annotations* t)
 
 (defgeneric compile-expression (expr ctx env)
-  (:documentation "Compile coalton expression into lisp code")
+  (:documentation "Compile coalton expression into lisp code"))
 
-  (:method ((expr typed-node-literal) ctx env)
-    (typed-node-literal-value expr))
+(defmethod compile-expression ((expr typed-node-literal) ctx env)
+  `',(typed-node-literal-value expr))
 
-  (:method ((expr typed-node-variable) ctx env)
-    (let* ((preds (remove-duplicates (scheme-predicates (typed-node-type expr)) :test #'equalp))
-           (function-application (gethash (length preds) *function-application-functions*)))
-      (if preds
-          `(,function-application ,(typed-node-variable-name expr)
-                                  ,@(compile-typeclass-dicts preds ctx env))
-          (typed-node-variable-name expr))))
+(defmethod compile-expression ((expr typed-node-variable) ctx env)
+  (let* ((preds (remove-duplicates (scheme-predicates (typed-node-type expr)) :test #'equalp))
+         (function-application (gethash (length preds) *function-application-functions*)))
+    (if preds
+        `(,function-application ,(typed-node-variable-name expr)
+                                ,@(compile-typeclass-dicts preds ctx env))
+        (typed-node-variable-name expr))))
 
-  (:method ((expr typed-node-application) ctx env)
-    (let* ((arity (length (typed-node-application-rands expr)))
-           ;; NOTE: We will not apply predicates to the rator if it is
-           ;;       an application because we can assume it will
-           ;;       already apply the arguments.
-           (preds (and (not (coalton-impl/typechecker::typed-node-application-p
-                             (typed-node-application-rator expr)))
-                       (scheme-predicates
-                        (typed-node-type (typed-node-application-rator expr)))))
-           (num-preds (length preds))
-           (function-application (gethash (+ arity num-preds) *function-application-functions*))
-           (rator (typed-node-application-rator expr)))
-      (unless function-application
-        (coalton-impl::coalton-bug "Unable to apply function of arity ~A" arity))
+(defmethod compile-expression ((expr typed-node-application) ctx env)
+  (let* ((arity (length (typed-node-application-rands expr)))
+         ;; NOTE: We will not apply predicates to the rator if it is
+         ;;       an application because we can assume it will
+         ;;       already apply the arguments.
+         (preds (and (not (coalton-impl/typechecker::typed-node-application-p
+                           (typed-node-application-rator expr)))
+                     (scheme-predicates
+                      (typed-node-type (typed-node-application-rator expr)))))
+         (num-preds (length preds))
+         (function-application (gethash (+ arity num-preds) *function-application-functions*))
+         (rator (typed-node-application-rator expr)))
+    (unless function-application
+      (coalton-impl::coalton-bug "Unable to apply function of arity ~A" arity))
 
-      `(,function-application
-        ,(if (coalton-impl/typechecker::typed-node-variable-p rator)
-             (typed-node-variable-name rator)
-             (compile-expression rator ctx env))
-        ,@(compile-typeclass-dicts preds
-                                   ctx env)
-        ,@(mapcar (lambda (expr) (compile-expression expr ctx env))
-                  (typed-node-application-rands expr)))))
+    `(,function-application
+      ,(if (coalton-impl/typechecker::typed-node-variable-p rator)
+           (typed-node-variable-name rator)
+           (compile-expression rator ctx env))
+      ,@(compile-typeclass-dicts preds
+                                 ctx env)
+      ,@(mapcar (lambda (expr) (compile-expression expr ctx env))
+                (typed-node-application-rands expr)))))
 
-  (:method ((expr typed-node-direct-application) ctx env)
-    `(,(typed-node-direct-application-rator expr)
-      ,@(compile-typeclass-dicts
-         (scheme-predicates
-          (typed-node-direct-application-rator-type expr))
-         ctx env)
-      ,@(mapcar
-         (lambda (expr) (compile-expression expr ctx env))
-         (typed-node-direct-application-rands expr))))
+(defmethod compile-expression ((expr typed-node-direct-application) ctx env)
+  `(,(typed-node-direct-application-rator expr)
+    ,@(compile-typeclass-dicts
+       (scheme-predicates
+        (typed-node-direct-application-rator-type expr))
+       ctx env)
+    ,@(mapcar
+       (lambda (expr) (compile-expression expr ctx env))
+       (typed-node-direct-application-rands expr))))
 
-  (:method ((expr typed-node-abstraction) ctx env)
-    (let* ((lambda-expr `(lambda ,(mapcar #'car (typed-node-abstraction-vars expr))
-                           (declare (ignorable ,@(mapcar #'car (typed-node-abstraction-vars expr)))
-                                    ,@(when *emit-type-annotations*
-                                        `(,@(mapcar (lambda (var) `(type ,(lisp-type (cdr var) env) ,(car var)))
-                                                    (typed-node-abstraction-vars expr))
-                                          (values ,(lisp-type (typed-node-abstraction-subexpr expr) env) &optional))))
-                           ,(compile-expression (typed-node-abstraction-subexpr expr) ctx env)))
-           (arity (length (typed-node-abstraction-vars expr))))
-        
-      (let ((function-constructor (gethash arity *function-constructor-functions*)))
-        (unless function-constructor
-          (coalton-impl::coalton-bug "Unable to construct function of arity ~A" arity))
-        `(,function-constructor ,lambda-expr))))
+(defmethod compile-expression ((expr typed-node-abstraction) ctx env)
+  (let* ((lambda-expr `(lambda ,(mapcar #'car (typed-node-abstraction-vars expr))
+                         (declare (ignorable ,@(mapcar #'car (typed-node-abstraction-vars expr)))
+                                  ,@(when *emit-type-annotations*
+                                      `(,@(mapcar (lambda (var) `(type ,(lisp-type (cdr var) env) ,(car var)))
+                                                  (typed-node-abstraction-vars expr))
+                                        (values ,(lisp-type (typed-node-abstraction-subexpr expr) env) &optional))))
+                         ,(compile-expression (typed-node-abstraction-subexpr expr) ctx env)))
+         (arity (length (typed-node-abstraction-vars expr))))
+    
+    (let ((function-constructor (gethash arity *function-constructor-functions*)))
+      (unless function-constructor
+        (coalton-impl::coalton-bug "Unable to construct function of arity ~A" arity))
+      `(,function-constructor ,lambda-expr))))
 
-  (:method ((expr typed-node-let) ctx env)
-    (compile-binding-list (typed-node-let-bindings expr)
-                          (typed-node-let-sorted-bindings expr)
-                          (typed-node-let-subexpr expr)
-                          (typed-node-let-dynamic-extent-bindings expr)
-                          ctx
-                          env))
+(defmethod compile-expression ((expr typed-node-let) ctx env)
+  (compile-binding-list (typed-node-let-bindings expr)
+                        (typed-node-let-sorted-bindings expr)
+                        (typed-node-let-subexpr expr)
+                        (typed-node-let-dynamic-extent-bindings expr)
+                        ctx
+                        env))
 
-  (:method ((expr typed-node-lisp) ctx env)
-    (let ((inner
-            (if *emit-type-annotations*
-                `(the (values ,(lisp-type expr env) &optional) ,(typed-node-lisp-form expr))
-                (typed-node-lisp-form expr))))
-      (if (typed-node-lisp-variables expr)
-          `(let ,(mapcar
-                  (lambda (vars)
-                    (list (car vars) (cdr vars)))
-                  (typed-node-lisp-variables expr))
-             ,inner)
-          inner)))
+(defmethod compile-expression ((expr typed-node-lisp) ctx env)
+  (let ((inner
+          (if *emit-type-annotations*
+              `(the (values ,(lisp-type expr env) &optional) ,(typed-node-lisp-form expr))
+              (typed-node-lisp-form expr))))
+    (if (typed-node-lisp-variables expr)
+        `(let ,(mapcar
+                (lambda (vars)
+                  (list (car vars) (cdr vars)))
+                (typed-node-lisp-variables expr))
+           ,inner)
+        inner)))
 
-  (:method ((expr typed-node-match) ctx env)
-    (let ((subexpr (compile-expression (typed-node-match-expr expr) ctx env))
-          (branches (mapcar (lambda (b)
-                              `(,(compile-pattern (typed-match-branch-pattern b) env)
-                                ,(compile-expression (typed-match-branch-subexpr b) ctx env)))
-                            (typed-node-match-branches expr))))
+(defmethod compile-expression ((expr typed-node-match) ctx env)
+  (let ((subexpr (compile-expression (typed-node-match-expr expr) ctx env))
+        (branches (mapcar (lambda (b)
+                            `(,(compile-pattern (typed-match-branch-pattern b) env)
+                              ,(compile-expression (typed-match-branch-subexpr b) ctx env)))
+                          (typed-node-match-branches expr))))
 
-      `(trivia:match (the ,(lisp-type (typed-node-match-expr expr) env) ,subexpr)
-         ;; NOTE: This error intentionally has no helpful
-         ;; information. The pattern exhastiveness checks should
-         ;; make it so this should never be hit and this allows us
-         ;; to avoid bloat with error allocations.
-         ,@branches (_ (error "Pattern match not exaustive error")))))
+    `(trivia:match (the ,(lisp-type (typed-node-match-expr expr) env) ,subexpr)
+       ;; NOTE: This error intentionally has no helpful
+       ;; information. The pattern exhastiveness checks should
+       ;; make it so this should never be hit and this allows us
+       ;; to avoid bloat with error allocations.
+       ,@branches (_ (error "Pattern match not exaustive error")))))
 
-  (:method ((expr typed-node-seq) ctx env)
-    `(progn ,@(mapcar (lambda (subnode)
-                        (compile-expression subnode ctx env))
-                      (typed-node-seq-subnodes expr)))))
+(defmethod compile-expression ((expr typed-node-seq) ctx env)
+  `(progn ,@(mapcar (lambda (subnode)
+                      (compile-expression subnode ctx env))
+                    (typed-node-seq-subnodes expr))))
 
 (defun reduce-preds-for-codegen (preds env)
   (reduce-context env (remove-duplicates preds :test #'equalp) nil))

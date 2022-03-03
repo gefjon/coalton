@@ -85,6 +85,8 @@
    #:node-the                           ; STRUCT
    #:node-the-type                      ; ACCESSOR
    #:node-the-subnode                   ; ACCESSOR
+   #:node-quote                         ; STRUCT
+   #:node-quote-literal                 ; ACCESSOR
    #:match-branch-pattern               ; ACCESSOR
    #:match-branch-subexpr               ; ACCESSOR
    #:match-branch-unparsed              ; ACCESOR
@@ -435,6 +437,7 @@
    #:Lisp-Object
    #:List #:Cons #:Nil)
   (:export
+   #:quote
    #:fn #:λ
    #:match
    #:let
