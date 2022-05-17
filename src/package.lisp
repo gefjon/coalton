@@ -405,6 +405,7 @@
    #:instance-definition-methods             ; ACCESSOR
    #:instance-definition-codegen-sym         ; ACCESSOR
    #:instance-definition-method-codegen-syms ; ACCESSOR
+   #:instance-definition-docstring           ; ACCESSOR
    #:instance-definition-list                ; TYPE
    )
   (:export
