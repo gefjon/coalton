@@ -10,7 +10,8 @@
   (context             (required 'context)             :type ty-predicate-list  :read-only t)
   (methods             (required 'methods)             :type hash-table         :read-only t)
   (codegen-sym         (required 'codegen-sym)         :type symbol             :read-only t)
-  (method-codegen-syms (required 'method-codegen-syms) :type hash-table         :read-only t))
+  (method-codegen-syms (required 'method-codegen-syms) :type hash-table         :read-only t)
+  (docstring           nil                             :type (or string null)   :read-only t))
 
 (defun instance-definition-list-p (x)
   (and (alexandria:proper-list-p x)
@@ -23,17 +24,26 @@
   (declare (type list form)
            (type environment env))
 
-    (unless (and (listp form)
+  (unless (and (listp form)
                  (<= 2 (length form))
                  (eql 'coalton:define-instance (first form)))
       (error-parsing form "malformed DEFINE-INSTANCE form"))
 
+  (multiple-value-bind (instance-spec
+                        docstring
+                        methods)
+      (if (typep (third form) 'string)
+          (values (second form)
+                  (third form)
+                  (nthcdr 3 form))
+          (values (second form)
+                  nil
+                  (nthcdr 2 form)))
+
     (multiple-value-bind (unparsed-predicate unparsed-context)
-        (split-class-signature (second form) "malformed DEFINE-INSTANCE form")
+        (split-class-signature instance-spec "malformed DEFINE-INSTANCE form")
 
-      (let* ((methods (nthcdr 2 form))
-
-             (tyvar-names (collect-type-vars unparsed-predicate))
+      (let* ((tyvar-names (collect-type-vars unparsed-predicate))
 
              (tyvars
                (loop :for tyvar-name :in tyvar-names
@@ -72,10 +82,11 @@
             (values
              predicate
              context
-             methods))))))
+             methods
+             docstring)))))))
 
 (defun parse-instance-definition (form package env)
-  (multiple-value-bind (predicate context methods)
+  (multiple-value-bind (predicate context methods docstring)
       (parse-instance-decleration form env)
 
     (with-pprint-variable-context ()
@@ -169,4 +180,5 @@
              :context context
              :methods method-bindings
              :codegen-sym (ty-class-instance-codegen-sym instance-entry)
-             :method-codegen-syms (ty-class-instance-method-codegen-syms instance-entry))))))))
+             :method-codegen-syms (ty-class-instance-method-codegen-syms instance-entry)
+             :docstring docstring)))))))
