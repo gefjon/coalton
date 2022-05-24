@@ -574,6 +574,9 @@
   (:export
    #:type-of
    #:kind-of)
+  ;; `cl:documentation' doc-type specifiers
+  (:export
+   #:instance)
   (:intern
    #:Boolean/True
    #:Boolean/False))
