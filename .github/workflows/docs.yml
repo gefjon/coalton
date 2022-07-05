@@ -42,7 +42,7 @@ jobs:
               "coalton-website/content/reference.md" 
               :backend :hugo))
           EOF
-          qlot exec ros -- run-tests.lisp
+          qlot exec ros dynamic-space-size=2048 -- run-tests.lisp
 
       # Create PR in website repository for changes2
       - uses: peter-evans/create-pull-request@v3

@@ -42,7 +42,7 @@ jobs:
             (asdf:test-system :coalton)
             (asdf:load-system :small-coalton-programs))
           EOF
-          qlot exec ros -- run-tests.lisp
+          qlot exec ros dynamic-space-size=2048 -- run-tests.lisp
   bench:
     runs-on: ubuntu-latest
 
@@ -68,7 +68,7 @@ jobs:
             (asdf:load-system :coalton/benchmarks)
             (sb-ext::without-gcing (uiop:symbol-call :coalton-benchmarks :run-benchmarks-ci)))
           EOF
-          qlot exec ros -- run-benchmarks.lisp
+          qlot exec ros dynamic-space-size=2048 -- run-benchmarks.lisp
       - uses: actions/cache@v1
         with:
           path: ./cache
